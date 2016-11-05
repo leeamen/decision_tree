@@ -44,7 +44,7 @@ def ClassError(vector_class):
   return (float(total) - max(vector_class))/total
 
 if __name__ == '__main__':
-  print '%.3f'%(InformationGain(0.991, [4,4], [0,1]))
+  print '%.3f'%(InformationGain(0.991, [4,4, 4], [0,1, 3]))
   print '%.3f'%(Gini([0,6]))
   print '%.3f'%(ClassError([0,6]))
   param = {}
