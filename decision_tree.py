@@ -31,11 +31,11 @@ class MyTreeNode(object):
     self.label = -1
 
     #不纯性度量
-    self.entropy = 0
-    self.gini = 0
-    self.class_error = 0
-    self.info_gain = 0
-    self.gain_ratio = 0
+    self.entropy = -1
+    self.gini = -1
+    self.class_error = -1
+    self.info_gain = -1
+    self.gain_ratio = -1
 
   def __str__(self):
     return self.Recursion(self)
@@ -103,6 +103,7 @@ class MyTreeNode(object):
     return False
   def CalcuErrorNum(self):
     self.error_num = sum(self.label != self.y[self.x_rows])
+#    logger.debug('叶子节点,错误数量:%d', self.error_num)
 
   def GetErrorNum(self):
     return self.error_num
@@ -115,7 +116,7 @@ class MyTreeNode(object):
     if self.param['measure'] == 'gini':
       self.gini = eq.Gini(vector)
     elif self.param['measure'] == 'entropy':
-      self.entropy = eq.Entropy()
+      self.entropy = eq.Entropy(vector)
     elif self.param['measure'] == 'class_error':
       self.class_error = eq.ClassError(vector)
     elif self.param['measure'] == 'info_gain':
@@ -161,8 +162,11 @@ class MyTreeNode(object):
       vk = self.param[self.param['measure']]([f_dict[k][i] for i in range(0,class_num)])
       he += float(nk) / N * vk
     if self.param['measure'] == 'info_gain':
-      if not self.father == None:
-        he = self.father.GetEntropy() - he
+      he = self.entropy - he
+    if he < 0.0:
+      logger.error('error,信息增益为:%f', he)
+      logger.error('error,father    :%f', self.entropy)
+      logger.error('error,划分的商  :%f', he)
     #elif self.param['measure'] == 'gain_ratio':
 
     #logger.debug('不纯性度量值:%f', he)
@@ -175,12 +179,15 @@ class MyTreeNode(object):
     param_measure = self.param['measure']
     if param_measure == 'info_gain' or param_measure == 'gain_ratio':
       choice += 'max'
-      measure = -1
+      measure = -100
     else:
       choice += 'min'
       measure = 100
 
 #    logger.debug('self.features:%s', self.features);
+#    logger.debug('self.x_rows:%s', self.x_rows);
+#    logger.debug('y.x_rows:%s', self.y[self.x_rows]);
+#    logger.debug('self.entroy:%f', self.entropy)
     for f in self.features:
       (m, values) = self.MeasureFeature(f)
       if choice == 'min' and measure > m:
@@ -193,6 +200,8 @@ class MyTreeNode(object):
         feature_values = values
 
 #    logger.debug('feature:%d', feature)
+#    logger.debug('measure:%f', measure)
+    assert(measure >= 0.0)
     assert(feature >= 0)
     assert(not feature_values == None)
     return (measure, feature , feature_values)
@@ -210,12 +219,14 @@ class MyModel(object):
     if len(features) <= 0:
       return True
     #标签都是一类
-    if sum(y == 0) == 0 or sum(y == 1) == 0:
-      logger.debug('标签都是一类,结束,%s', y)
+    if np.max(y[x_rows]) == np.min(y[x_rows]):
+     # logger.debug('标签都是一类,结束,%s', y[x_rows])
       return True
     #属性值都相同
     tmp_row = list(x[x_rows[0],features])
+#    logger.debug('tmp_row:%s', tmp_row)
     for index in x_rows:
+#      logger.debug('row:%s', list(x[index, features]))
       if not tmp_row == list(x[index, features]):
         return False
     return True
@@ -274,6 +285,7 @@ class MyModel(object):
     tree_pep = self.CalcuTreePEP()
 #    logger.debug('tree_pep:%f,如果剪枝,剪后pep:%f', tree_pep, pep)
     if pep < tree_pep:
+      logger.debug('剪枝,tree_pep:%f,剪后pep:%f', tree_pep, pep)
       #更新叶子节点列表
       self.CutLeafs(node)
       node.ClearChildren()
@@ -310,7 +322,9 @@ class MyModel(object):
 
   def PosPruning(self):
     if self.param['pos_pruning'] == 'pessimistic':
+      #logger.debug('进行后剪枝,pessimistic pruning.')
       self.Pessimistic(self.root)
+
 
   def PrePruning(self, measure):
     try:
@@ -343,6 +357,7 @@ class MyModel(object):
       leaf.CalcuErrorNum()
       self.leafs.append(leaf)
       return leaf
+#    logger.debug('feature_index:%d', feature_index)
     root.SetSplitAttr(feature_index)
     #继续分裂
     new_features = features[:]
@@ -360,17 +375,19 @@ class MyModel(object):
 
   def Predict(self, x):
     y = np.array(len(x) * [-1])
-    x_rows = []
-    for i in range(0, len(x)):
-      x_rows.append(i)
+    x_rows = [i for i in range(0, len(x))]
 
     self.RecursionTree(self.root, x, x_rows, y)
     return y
 
   def RecursionTree(self, node, x, x_rows, y):
+    #没有节点
+    if len(x_rows) <= 0:
+      return
     #叶子节点
-    if not node.HasChildren():
+    if node.HasChildren() == False:
       y[x_rows] = node.GetLabel()
+#      logger.debug('predict 获取标签:%d,x_rows:%s', node.GetLabel(),x_rows)
       return
 
     feature = node.GetSplitAttr()
@@ -403,15 +420,13 @@ def Train(x,y,param = {}):
   x_rows = []
   for i in range(0,len(x)):
     x_rows.append(i)
-
   #训练
   model = MyModel(param)
   model.fit(x, y, x_rows, features)
-
   #后剪枝
   if param.has_key('pos_pruning'):
     model.PosPruning()
-
+#  logger.debug('树:%s', model.root)
   return model
 
 def RepeatRandom(start, end, N):
@@ -469,6 +484,8 @@ def CrossValidation(x, y, param):
     test_x = np.vstack((x[0:i*n, :], x[(i+1)*n:, :]))
     train_y = y[i*n : (i+1)*n]
     test_y = np.hstack((y[0: i*n], y[(i+1)*n:]))
+
+    logger.debug('train_x:%s,test_x:%s,train_y:%s,test_y:%s',train_x.shape,test_x.shape,train_y.shape,test_y.shape)
     model = Train(train_x, train_y, param)
     pred = model.Predict(test_x)
     error_rate += 1.0 * sum(pred != test_y)/len(test_y)
@@ -527,7 +544,12 @@ def Adaboost(x, y, param):
 def Argmax(x, N):
   y = np.zeros(N, dtype = np.int)
   for i in range(0, N):
-    y[i] = np.where(x[:,i] == np.max(x[:,i]))[0]
+    try:
+      y[i] = np.where(x[:,i] == np.max(x[:,i]))[0]
+    except:
+      logger.debug('%s', np.where(x[:,i] == np.max(x[:,i]))[0])
+      logger.debug('%s', x[:,i])
+      y[i] = np.where(x[:,i] == np.max(x[:,i]))[0][0]
   return y
 
 def HoldoutMethod(x, y, param):
@@ -538,10 +560,23 @@ def HoldoutMethod(x, y, param):
   x2 = x[split:,:]
   y2 = y[split:]
 
+  logger.debug('%s,%s,%s,%s',x1.shape, y1.shape, x2.shape, y2.shape)
   model = Train(x1, y1, param)
   pred = model.Predict(x2)
+#  logger.debug('%s,%s,%s,%s',x1.shape, y1.shape, x2.shape, y2.shape)
+#  logger.debug('x1:%s',x1)
+#  logger.debug('x2:%s',x2)
+  logger.debug('pred:%s', pred)
+  logger.debug('y   :%s', y2)
+  logger.debug('统计%s,%s',np.min(x1, 0), np.max(x1, 0))
+  logger.debug('统计%s,%s',np.min(x2, 0), np.max(x2, 0))
   logger.debug('holdout method准确率:%f', 1.0*sum(pred == y2)/len(y2))
 
+#  pred2 = model.Predict(x1)
+#  logger.debug(pred2)
+#  logger.debug('holdout method准确率:%f', 1.0*sum(pred2 == y1)/len(y1))
+#  logger.debug('tree:%s', model.root)
+#
 if __name__ == '__main__':
   train = []
 #  train.append([1,1,1,0])
