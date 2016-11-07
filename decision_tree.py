@@ -10,6 +10,7 @@ import sys
 import pprint as pp
 import copy
 import random
+import numpy.lib.arraysetops as arraysetops
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -88,7 +89,7 @@ class MyTreeNode(object):
 
   def Addchild(self, attr_value, node):
     self.children[attr_value] = node
-    #node.SetFather(self)
+    node.SetFather(self)
   def ClearChildren(self):
     self.children.clear()
   def SetFather(self,node):
@@ -243,13 +244,6 @@ class MyModel(object):
         max_num_label = num_label_i
     return max_label
 
-#  def FindBestSplit(self, node):
-#    return node.FindBestSplit()
-      
-    
-#  def CalcuMeasure(self, node):
-#    node.CalcuMeasure()
-#
   def GetLeafNumNotAncestor(self, node):
     total = len(self.leafs)
     for leaf in self.leafs:
@@ -263,13 +257,16 @@ class MyModel(object):
     #计算错误个数
     error_num = node.CalcuErrorNumForLabel(label)
     error_num += self.GetErrorNumNotAncestor(node)
+#    logger.debug('错分类个数:%d', error_num)
 
     omega = self.GetOmega()
     leaf_num = self.GetLeafNumNotAncestor(node)
     #加上自己
     leaf_num += 1
     #计算PEP
-    return (error_num + omega * leaf_num) / N
+#    logger.debug('计算如果剪枝后,leaf_num:%d', leaf_num)
+#    logger.debug('计算如果剪枝后,error_num:%d', error_num)
+    return (leaf_num,(error_num + omega * leaf_num) / (1.0*N))
 
   def GetErrorNumNotAncestor(self, node):
     num = 0
@@ -281,27 +278,33 @@ class MyModel(object):
     if len(node.GetChildren()) <= 0:
       return True
 
-    pep = self.CalcuNodePEP(node)
-    tree_pep = self.CalcuTreePEP()
+    (leaf_num,pep) = self.CalcuNodePEP(node)
+    (leaf_num_tree,tree_pep) = self.CalcuTreePEP()
 #    logger.debug('tree_pep:%f,如果剪枝,剪后pep:%f', tree_pep, pep)
     if pep < tree_pep:
-      logger.debug('剪枝,tree_pep:%f,剪后pep:%f', tree_pep, pep)
+      logger.debug('剪枝,tree_pep:%f,树叶子个数:%d,剪后pep:%f,叶子个数:%d', tree_pep, leaf_num_tree,pep,leaf_num)
       #更新叶子节点列表
       self.CutLeafs(node)
       node.ClearChildren()
-      node.SetLabel(self.Classify(node.GetY(), node.GetXRows))
+#      logger.debug('合并节点x_rows:%s',node.GetXRows())
+      node.SetLabel(self.Classify(node.GetY(), node.GetXRows()))
       node.CalcuErrorNum()
-      logger.debug('剪枝,tree_pep:%f,如果剪枝,剪后pep:%f', tree_pep, pep)
       return True
     #遍历
     for (v, child) in node.GetChildren():
       self.Pessimistic(child)
 
   def CutLeafs(self, node):
-    for i in range(0, len(self.leafs)):
+    logger.debug('剪枝之前leafs:%d', len(self.leafs))
+#    logger.debug(self.leafs)
+    #倒序删除
+    cutsum = 0
+    for i in range(len(self.leafs)-1, -1, -1):
       if self.leafs[i].HasAncestor(node) == True:
         self.leafs.pop(i)
+        cutsum+=1
     self.leafs.append(node)
+    logger.debug('减掉结点个数:%d',cutsum)
 
   def GetOmega(self):
     try:
@@ -318,7 +321,11 @@ class MyModel(object):
     for leaf in self.leafs:
       error_num += leaf.GetErrorNum()
     omega = self.GetOmega()
-    return (error_num + omega * leaf_num)/N
+
+#    logger.debug('计算树,leaf_num:%d', leaf_num)
+#    logger.debug('计算树,error_num:%d', error_num)
+#    logger.debug('N:%d',N)
+    return (leaf_num,(error_num + omega * leaf_num)/(1.0*N))
 
   def PosPruning(self):
     if self.param['pos_pruning'] == 'pessimistic':
@@ -391,9 +398,14 @@ class MyModel(object):
       return
 
     feature = node.GetSplitAttr()
+    rest_x_row = np.array(x_rows, dtype = np.int)
     for (value, child) in node.GetChildren():
       new_x_row = np.intersect1d(x_rows, np.where(x[:,feature] == value)[0])
+      rest_x_row = arraysetops.setxor1d(rest_x_row, new_x_row, True)
       self.RecursionTree(child, x, new_x_row, y)
+
+    #训练不充分导致测试集有未知数据不能向下划分预测
+    y[rest_x_row] = self.Classify(y, x_rows)
 
 def Train(x,y,param = {}):
   #设置参数

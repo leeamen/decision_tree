@@ -40,13 +40,14 @@ if __name__ == '__main__':
 #  param['pre_pruning'] = 0.5
   #pessimistic pruning
   param['pos_pruning'] = 'pessimistic'
-  param['factor'] = 1.0
+  param['factor'] = 0.5
 
-#  model = ml.Train(train_x, train_y, param)
-#  pred = model.Predict(train_x)
-#  logger.debug('准确率:%f', 1.0*sum(pred == train_y)/len(train_y))
+  model = ml.Train(train_x, train_y, param)
+  pred = model.Predict(train_x)
+  logger.debug('准确率:%f', 1.0*sum(pred == train_y)/len(train_y))
   ml.HoldoutMethod(train_x, train_y, param)
   ml.CrossValidation(train_x, train_y, param)
   ml.Bootstrap(train_x, train_y, param)
   ml.Adaboost(train_x, train_y, param)
-#
+  logger.debug(model.root)
+
