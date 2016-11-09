@@ -11,6 +11,8 @@ import pprint as pp
 import copy
 import random
 import numpy.lib.arraysetops as arraysetops
+import time
+random.seed(time.time())
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -22,10 +24,10 @@ class MyTreeNode(object):
     self.split_attr = -1
     self.error_num = 0
 
-    self.x = x
-    self.y = y
+    self.x = np.array(x, dtype = x.dtype)
+    self.y = np.array(y, dtype = y.dtype)
     self.x_rows = x_rows;
-    self.features = features[:]
+    self.features = copy.deepcopy(features)
     self.param = copy.deepcopy(param)
 
     #分类
@@ -125,20 +127,67 @@ class MyTreeNode(object):
     else:
       logger.error('error,参数 measure 错误:%s', self.param['measure'])
 
+  def ProcMissValue(self, feature):
+    #缺失值处理
+    stat_dict = {}
+    miss_rows = []
+    for row in self.x_rows:
+      if stat_dict.has_key(self.x[row, feature]) == False:
+        if np.isnan(self.x[row, feature]) == True:
+#          logger.debug('发现nan,row:%d', row)
+          miss_rows.append(row)
+        else:
+          stat_dict[self.x[row, feature]] = 1
+      else:
+        stat_dict[self.x[row, feature]] += 1
+    #most frequent value
+    most_frequent = None
+    for key in stat_dict.keys():
+      if most_frequent == None:
+        most_frequent = key
+      elif stat_dict[most_frequent] < stat_dict[key]:
+        most_frequent = key
+#    logger.debug('most_frequent float:%f', most_frequent)
+#    logger.debug('most_frequent:%s', str(most_frequent))
+#    logger.debug('miss_rows:%s', miss_rows)
+    if most_frequent == None:# or len(miss_rows) == 0:
+      logger.debug('都是nan,随机生成')
+#      max_value = np.max(self.x[:,feature])
+#      min_value = np.min(self.x[:,feature])
+#      for row in miss_rows:
+#        self.x[row, feature] = float(random.randint(int(min_value), int(max_value)))
+      return False
+      
+    for row in miss_rows:
+#      logger.debug('self.x[row,feature]:%s', str(self.x[row,feature]))
+      self.x[row,feature] = most_frequent
+    return True
+
   def MeasureFeature(self, feature):
     f_dict = {}
 
 #    logger.debug('self.x_rows:%s', self.x_rows)
 #    logger.debug('计算划分的属性:%d', feature)
+    miss_rows = []
     for row in self.x_rows:
 #      logger.debug('坐标的值%s:[%s]', (row, feature), str(self.x[row, feature]))
       if f_dict.has_key(self.x[row, feature]) == False:
         f_dict[self.x[row, feature]] = {}
-        f_dict[self.x[row, feature]][self.y[row]] = 1
+        try:
+          f_dict[self.x[row, feature]][self.y[row]] = 1
+        except KeyError:
+#          logger.debug('%s,%s', str(self.x[row, feature]), str(self.y[row]))
+#          logger.debug('nan')
+          #处理缺失值
+          r = self.ProcMissValue(feature)
+          if r == True:
+            return self.MeasureFeature(feature)
+          #处理不了,可能全是缺失值,放弃处理nan,数据不进行划分
       elif f_dict[self.x[row, feature]].has_key(self.y[row]) == False:
         f_dict[self.x[row, feature]][self.y[row]] = 1
       else:
         f_dict[self.x[row, feature]][self.y[row]] += 1
+
     #计算
     N = len(self.x_rows)
     he = 0.0
@@ -159,19 +208,24 @@ class MyTreeNode(object):
         except:
           f_dict[k][i] = 0
           nk += 0
-
+      if nk <= 0.0:
+        continue
       vk = self.param[self.param['measure']]([f_dict[k][i] for i in range(0,class_num)])
       he += float(nk) / N * vk
+#      logger.debug('%d, %f', nk, vk)
+    final = he
     if self.param['measure'] == 'info_gain':
-      he = self.entropy - he
-    if he < 0.0:
-      logger.error('error,信息增益为:%f', he)
-      logger.error('error,father    :%f', self.entropy)
-      logger.error('error,划分的商  :%f', he)
+      final = self.entropy - final
+    if final < 0.0:
+      logger.warn('error,信息增益为:%f', final)
+      logger.warn('error,father    :%f', self.entropy)
+      logger.warn('error,划分的商  :%f', he)
+#      logger.warn(vk)
+#      logger.warn(nk)
     #elif self.param['measure'] == 'gain_ratio':
 
     #logger.debug('不纯性度量值:%f', he)
-    return (he, f_dict.keys())
+    return (final, f_dict.keys())
 
   def FindBestSplit(self):
     feature = -1
@@ -190,6 +244,9 @@ class MyTreeNode(object):
 #    logger.debug('y.x_rows:%s', self.y[self.x_rows]);
 #    logger.debug('self.entroy:%f', self.entropy)
     for f in self.features:
+      #全是缺失值，不划分此属性
+      if sum(np.isnan(self.x[self.x_rows, f])) == len(self.x_rows):
+        continue
       (m, values) = self.MeasureFeature(f)
       if choice == 'min' and measure > m:
         measure = m
@@ -202,6 +259,8 @@ class MyTreeNode(object):
 
 #    logger.debug('feature:%d', feature)
 #    logger.debug('measure:%f', measure)
+    if not measure >= 0.0:
+      return (-1, -1, [])
     assert(measure >= 0.0)
     assert(feature >= 0)
     assert(not feature_values == None)
@@ -216,10 +275,11 @@ class MyModel(object):
     self.leafs = []
 
   def StoppingCond(self, x, y, x_rows, features):
-    #没有属性了
-    if len(features) <= 0:
+    #没有属性了,或者因为缺失值导致x_rows为空
+    if len(features) <= 0 or len(x_rows) <= 0:
+      if len(features) > 0:
+        logger.debug('features:%s,x_rows:%s', features,x_rows)
       return True
-    #标签都是一类
     if np.max(y[x_rows]) == np.min(y[x_rows]):
      # logger.debug('标签都是一类,结束,%s', y[x_rows])
       return True
@@ -232,9 +292,14 @@ class MyModel(object):
         return False
     return True
 
+  def ClassifyRandom(self, class_num):
+    return random.randint(0, class_num - 1)
   def Classify(self, y, x_rows):
     class_num = self.param['class_num']
 
+    #由于缺失值导致x_rows是空的
+    if len(x_rows) <= 0:
+      return random.randint(0, class_num - 1)
     max_num_label = sum(y[x_rows] == 0)
     max_label = 0
     for i in range(1, class_num):
@@ -356,6 +421,13 @@ class MyModel(object):
     root.SetFather(father)
 
     (measure, feature_index,feature_values) = root.FindBestSplit()
+    #都是缺失值，无法划分
+    if measure < 0.0:
+      root.SetLabel(self.ClassifyRandom(self.param['class_num']))
+      root.CalcuErrorNum()
+      self.leafs.append(root)
+      return root
+      
     #先剪枝
     if self.PrePruning(measure) == True:
       logger.debug('prepruning,增益:%f,阈值:%s', measure, self.param['pre_pruning'])
@@ -364,7 +436,7 @@ class MyModel(object):
       leaf.CalcuErrorNum()
       self.leafs.append(leaf)
       return leaf
-#    logger.debug('feature_index:%d', feature_index)
+    #logger.debug('FindBestSplit feature_index:%d,measure:%f', feature_index, measure)
     root.SetSplitAttr(feature_index)
     #继续分裂
     new_features = features[:]
@@ -441,6 +513,24 @@ def Train(x,y,param = {}):
 #  logger.debug('树:%s', model.root)
   return model
 
+def GetRandom2DArray(rate, x_dimension, y_dimension):
+  total = x_dimension * y_dimension
+  num = int(rate * total)
+  rand_arr = random.sample([i for i in range(0, total)], num)
+#  logger.debug(rand_arr)
+  rand2d = np.empty((0,2), dtype = np.int)
+  for i in range(0, len(rand_arr)):
+    loc_x = rand_arr[i]/y_dimension
+    loc_y = rand_arr[i]%y_dimension
+    rand2d = np.vstack((rand2d, [loc_x, loc_y]))
+  return rand2d
+def GenMissValueArray(arr, rate, x_dimension, y_dimension):
+  x = np.array(arr)
+  rand_arr = GetRandom2DArray(rate, x_dimension, y_dimension)
+#  logger.debug(rand_arr)
+  for i in range(0, len(rand_arr)):
+    x[rand_arr[i][0], rand_arr[i][1]] = np.nan
+  return x
 def RepeatRandom(start, end, N):
   rand_list = []
   for i in range(0,N):
@@ -484,7 +574,7 @@ def Bootstrap(x, y, param):
     acc_s = 1.0 * sum(pred_s == y) / len(x)
     accurate += 0.632 * acc_r + 0.368 * acc_s
   accurate /= b
-  logger.debug('bootstrap 准确率:%f', accurate)
+  logger.info('10次抽样Bootstrap准确率:%f', accurate)
 
 def CrossValidation(x, y, param):
   k = param['cv_fold']
@@ -497,12 +587,12 @@ def CrossValidation(x, y, param):
     train_y = y[i*n : (i+1)*n]
     test_y = np.hstack((y[0: i*n], y[(i+1)*n:]))
 
-    logger.debug('train_x:%s,test_x:%s,train_y:%s,test_y:%s',train_x.shape,test_x.shape,train_y.shape,test_y.shape)
+#    logger.debug('train_x:%s,test_x:%s,train_y:%s,test_y:%s',train_x.shape,test_x.shape,train_y.shape,test_y.shape)
     model = Train(train_x, train_y, param)
     pred = model.Predict(test_x)
     error_rate += 1.0 * sum(pred != test_y)/len(test_y)
 #    logger.debug('%f', 1.0 * sum(pred != test_y)/len(test_y))
-  logger.debug('交叉验证平均错误率:%f', error_rate / k)
+  logger.info('10折交叉验证平均准确率:%f', 1.0 - error_rate / k)
 
 def Adaboost(x, y, param):
   #初始化权重
@@ -513,7 +603,8 @@ def Adaboost(x, y, param):
   alpha = np.zeros(k, dtype = np.float)
   Z = np.zeros(k, dtype = np.float)
   classifiers = []
-  for i in range(0, k):
+  i = 0
+  while i < k:
     (train_x, train_y) = GetRepeatSample(x, y)
     classifer = Train(train_x, train_y, param)
     classifiers.append(classifer)
@@ -521,6 +612,7 @@ def Adaboost(x, y, param):
     epsilon = 1.0/N * np.dot(weight, np.array(pred == train_y, dtype = np.float))
     if epsilon > 0.5:
       weight = np.array([1.0/N] * N, dtype = np.float)
+      continue
     #更新权值
     alpha[i] = 1.0/2 * np.log((1-epsilon)/epsilon)
     tmp = np.exp(alpha[i]) * (pred != train_y) + np.exp(-1.0 * alpha[i])*(pred == train_y)
@@ -529,6 +621,7 @@ def Adaboost(x, y, param):
 #    logger.debug('tmp:%s', tmp)
     Z[i] = np.sum(tmp * weight)
     weight = weight / Z[i] * tmp
+    i+=1
 #    logger.debug('weight:%s', weight)
 #  logger.debug('alpha:%s', alpha)
 #  logger.debug('Z:%s', Z)
@@ -536,8 +629,8 @@ def Adaboost(x, y, param):
   preds = {}
   for i in range(0, len(classifiers)):
     preds[i] = classifiers[i].Predict(x)
-    logger.debug('pred:%s', preds[i])
-    logger.debug('y   :%s', y)
+#    logger.debug('pred:%s', preds[i])
+#    logger.debug('y   :%s', y)
 
   args = np.empty((0, N), dtype = np.float)
   for i in range(0, param['class_num']):
@@ -547,10 +640,10 @@ def Adaboost(x, y, param):
     args = np.vstack((args, arg))
 
   final_y = Argmax(args, N)
-  logger.debug('pred:%s', final_y)
-  logger.debug('y   :%s', y)
+#  logger.debug('pred:%s', final_y)
+#  logger.debug('y   :%s', y)
   acc = 1.0*sum(final_y == y) / len(y)
-  logger.debug('Adaboost 准确率为:%f', acc)
+  logger.info('Adaboost 准确率为:%f', acc)
 
 #求每一列最大的值所在的行号,即标签，多分类adaboost
 def Argmax(x, N):
@@ -559,8 +652,8 @@ def Argmax(x, N):
     try:
       y[i] = np.where(x[:,i] == np.max(x[:,i]))[0]
     except:
-      logger.debug('%s', np.where(x[:,i] == np.max(x[:,i]))[0])
-      logger.debug('%s', x[:,i])
+#      logger.debug('%s', np.where(x[:,i] == np.max(x[:,i]))[0])
+#      logger.debug('%s', x[:,i])
       y[i] = np.where(x[:,i] == np.max(x[:,i]))[0][0]
   return y
 
@@ -572,17 +665,17 @@ def HoldoutMethod(x, y, param):
   x2 = x[split:,:]
   y2 = y[split:]
 
-  logger.debug('%s,%s,%s,%s',x1.shape, y1.shape, x2.shape, y2.shape)
+#  logger.debug('%s,%s,%s,%s',x1.shape, y1.shape, x2.shape, y2.shape)
   model = Train(x1, y1, param)
   pred = model.Predict(x2)
 #  logger.debug('%s,%s,%s,%s',x1.shape, y1.shape, x2.shape, y2.shape)
 #  logger.debug('x1:%s',x1)
 #  logger.debug('x2:%s',x2)
-  logger.debug('pred:%s', pred)
-  logger.debug('y   :%s', y2)
-  logger.debug('统计%s,%s',np.min(x1, 0), np.max(x1, 0))
-  logger.debug('统计%s,%s',np.min(x2, 0), np.max(x2, 0))
-  logger.debug('holdout method准确率:%f', 1.0*sum(pred == y2)/len(y2))
+#  logger.debug('pred:%s', pred)
+#  logger.debug('y   :%s', y2)
+#  logger.debug('统计%s,%s',np.min(x1, 0), np.max(x1, 0))
+#  logger.debug('统计%s,%s',np.min(x2, 0), np.max(x2, 0))
+  logger.info('holdout method准确率:%f', 1.0*sum(pred == y2)/len(y2))
 
 #  pred2 = model.Predict(x1)
 #  logger.debug(pred2)

@@ -2,6 +2,7 @@
 #coding:utf-8
 
 import numpy as np
+np.seterr(divide ='ignore')
 import math
 def Entropy(vector_class):
   m = np.sum(vector_class)
@@ -9,7 +10,10 @@ def Entropy(vector_class):
 
   vec = 1.0/m*np.array(vector_class)
 #  print vec
-  e = -1.0 * np.dot(vec, np.nan_to_num(np.log2(vec)))
+  try:
+    e = -1.0 * np.dot(vec, np.nan_to_num(np.log2(vec)))
+  except RuntimeWarning:
+    pass
   return e
 
 #2分
