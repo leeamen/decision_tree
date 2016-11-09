@@ -4,7 +4,7 @@
 
 import logging
 import mylog
-import decision_tree as ml
+import mydecision_tree as ml
 import sys
 import os
 import numpy as np
