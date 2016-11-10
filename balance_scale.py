@@ -68,13 +68,9 @@ if __name__ == '__main__':
 #  x = ml.GenMissValueArray(train_x, 0.2, 625, 4)
 #    logger.debug(train_x)
 #    logger.debug(np.sum(np.isnan(x)))
-  #  param['pre_pruning'] = 0.3
-  #  logger.info('使用prepruning,阈值:%f', param['pre_pruning'])
-    #pessimistic pruning
-  #  param['pos_pruning'] = 'pessimistic'
-  #  param['factor'] = 1
-  #  logger.info('使用悲观剪枝法,惩罚值:%f', param['factor'])
 
+#  MissEvaluate(train_x, train_y)
+#  exit()
   model = ml.Train(train_x, train_y, param)
   pred = model.Predict(train_x)
 #    logger.debug('tree:%s', model.root)

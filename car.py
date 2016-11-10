@@ -66,6 +66,8 @@ if __name__ == '__main__':
 #  param['pos_pruning'] = 'pessimistic'
 #  param['factor'] = 1
 #  logger.info('使用悲观剪枝法,惩罚值:%f', param['factor'])
+#  MissEvaluate(train_x, train_y)
+#  exit()
 
   model = ml.Train(train_x, train_y, param)
   pred = model.Predict(train_x)
