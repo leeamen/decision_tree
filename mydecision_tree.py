@@ -299,14 +299,21 @@ class MyModel(object):
 
     #由于缺失值导致x_rows是空的
     if len(x_rows) <= 0:
+      logger.warn('不该到这里')
       return random.randint(0, class_num - 1)
-    max_num_label = sum(y[x_rows] == 0)
-    max_label = 0
-    for i in range(1, class_num):
+#    max_num_label = sum(y[x_rows] == 0)
+    max_num_label = None
+    max_label = -1
+    for i in range(0, class_num):
       num_label_i = sum(y[x_rows] == i)
-      if num_label_i > max_num_label:
+      if max_num_label is None:
+        max_num_label = num_label_i
+        max_label = i
+      elif num_label_i >= max_num_label:
         max_label = i
         max_num_label = num_label_i
+    assert(max_label >= 0)
+    assert(max_num_label >= 0)
     return max_label
 
   def GetLeafNumNotAncestor(self, node):
@@ -423,14 +430,17 @@ class MyModel(object):
     (measure, feature_index,feature_values) = root.FindBestSplit()
     #都是缺失值，无法划分
     if measure < 0.0:
-      root.SetLabel(self.ClassifyRandom(self.param['class_num']))
+#      logger.debug('全是缺失值,不进行划分,节点数据个数:%d!', len(x_rows))
+#      root.SetLabel(self.ClassifyRandom(self.param['class_num']))
+      root.SetLabel(self.Classify(y, x_rows))
+#      logger.debug('设置标签:%d', root.GetLabel())
       root.CalcuErrorNum()
       self.leafs.append(root)
       return root
       
     #先剪枝
     if self.PrePruning(measure) == True:
-      logger.debug('prepruning,增益:%f,阈值:%s', measure, self.param['pre_pruning'])
+#      logger.debug('prepruning,增益:%f,阈值:%s', measure, self.param['pre_pruning'])
       leaf = MyTreeNode(x, y, x_rows, features, self.param)
       leaf.SetLabel(self.Classify(y, x_rows))
       leaf.CalcuErrorNum()

@@ -30,8 +30,11 @@ def MissEvaluate(x, y):
   train_y = y
   for rate in [0.1, 0.3, 0.5, 0.7, 0.9]:
     train_x = ml.GenMissValueArray(x, rate, 1728, 6)
+    logger.debug(train_x)
     model = ml.Train(train_x, y, param)
     pred = model.Predict(train_x)
+    logger.debug('   pred:%s', pred)
+    logger.debug('train_y:%s', train_y)
     logger.info('训练集测试准确率:%f', 1.0*sum(pred == train_y)/len(train_y))
     ml.HoldoutMethod(train_x, train_y, param)
     ml.CrossValidation(train_x, train_y, param)
@@ -54,20 +57,21 @@ if __name__ == '__main__':
   # 缺失值
   param = {}
   param['adaboost'] = 10
-  param['measure'] = 'info_gain'
+  param['measure'] = 'gini'
   param['cv_fold'] = 10
   param['bootstrap'] = 10
   param['class_num'] = 4
 
-#  train_x = ml.GenMissValueArray(train_x, rate, 1728, 6)
+#先剪枝
 #  param['pre_pruning'] = 0.3
 #  logger.info('使用prepruning,阈值:%f', param['pre_pruning'])
  #pessimistic pruning
 #  param['pos_pruning'] = 'pessimistic'
 #  param['factor'] = 1
 #  logger.info('使用悲观剪枝法,惩罚值:%f', param['factor'])
-#  MissEvaluate(train_x, train_y)
-#  exit()
+#  缺失值
+  MissEvaluate(train_x, train_y)
+  exit()
 
   model = ml.Train(train_x, train_y, param)
   pred = model.Predict(train_x)

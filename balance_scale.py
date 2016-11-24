@@ -33,6 +33,7 @@ def MissEvaluate(x, y):
   train_y = y
   for rate in [0.1, 0.3, 0.5, 0.7, 0.9]:
     train_x = ml.GenMissValueArray(x, rate, 625, 4)
+    logger.debug(train_x)
     model = ml.Train(train_x, y, param)
     pred = model.Predict(train_x)
     logger.info('训练集测试准确率:%f', 1.0*sum(pred == train_y)/len(train_y))
@@ -69,8 +70,8 @@ if __name__ == '__main__':
 #    logger.debug(train_x)
 #    logger.debug(np.sum(np.isnan(x)))
 
-#  MissEvaluate(train_x, train_y)
-#  exit()
+  MissEvaluate(train_x, train_y)
+  exit()
   model = ml.Train(train_x, train_y, param)
   pred = model.Predict(train_x)
 #    logger.debug('tree:%s', model.root)
