@@ -655,7 +655,7 @@ def Adaboost(x, y, param):
   acc = 1.0*sum(final_y == y) / len(y)
   logger.info('Adaboost 准确率为:%f', acc)
 
-#求每一列最大的值所在的行号,即标签，多分类adaboost
+#求每一列最大的值所在的行号,即标签,多分类adaboost,矩阵:class_num * N
 def Argmax(x, N):
   y = np.zeros(N, dtype = np.int)
   for i in range(0, N):
