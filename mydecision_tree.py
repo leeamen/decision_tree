@@ -1,7 +1,7 @@
 #!/usr/bin/python
 #coding:utf-8
 
-import mylog
+from mltoolkits import *
 import myequation as eq
 import logging
 import numpy as np
@@ -526,7 +526,7 @@ def Train(x,y,param = {}):
 def GetRandom2DArray(rate, x_dimension, y_dimension):
   total = x_dimension * y_dimension
   num = int(rate * total)
-  rand_arr = random.sample([i for i in range(0, total)], num)
+  rand_arr = random.sample(xrange(0, total), num)
 #  logger.debug(rand_arr)
   rand2d = np.empty((0,2), dtype = np.int)
   for i in range(0, len(rand_arr)):
